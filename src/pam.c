@@ -17,6 +17,8 @@
  * along with Pam_mounter; if not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "config.h"
+
 #define PAM_SM_AUTH
 #define PAM_SM_SESSION
 
@@ -32,6 +34,8 @@
 #include <string.h>
 #include <ctype.h>
 #include <errno.h>
+
+#define CONFIGFILE "/etc/security/pam_mounter.conf"
 
 static char* encode_device_name(const char* device) {
   char* device_name = strdup(device);
@@ -83,18 +87,18 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
 }
 
 PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv) {
-  //Skip no arguments
-  if (argc < 2)
-    return PAM_SUCCESS;
-
   int r;
   const char *authtok = NULL;
   if ((r = pam_get_data(pamh, "pam_mounter_authtok", (const void**) &authtok)) != PAM_SUCCESS)
     return PAM_SUCCESS;
 
+  PENTRY config = config_load(CONFIGFILE);
+  const char* source = map_get(&config, "source", NULL);
+  const char* target = map_get(&config, "target", NULL);
+
   struct crypt_device *cd;
-  if ((r = crypt_init(&cd, argv[0])) < 0) {
-    printf("crypt_init() failed for %s.\n", argv[0]);
+  if ((r = crypt_init(&cd, source)) < 0) {
+    printf("crypt_init() failed for %s.\n", source);
     return PAM_SUCCESS;
   }
 
@@ -104,7 +108,7 @@ PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, cons
     return PAM_SUCCESS;
   }
 
-  char* device_name = encode_device_name(argv[0]);
+  char* device_name = encode_device_name(source);
   if (device_name == NULL) {
     crypt_free(cd);
     return PAM_SUCCESS;
@@ -124,7 +128,7 @@ PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, cons
   struct libmnt_context *cxt = mnt_new_context();
   if (cxt) {
     mnt_context_set_source(cxt, device_name_path);
-    mnt_context_set_target(cxt, argv[1]);
+    mnt_context_set_target(cxt, target);
     
     int ret;
     if ((ret = mnt_context_mount(cxt)))
@@ -142,11 +146,11 @@ PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, cons
 }
 
 PAM_EXTERN int pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, const char **argv) {
-  //Skip no arguments
-  if (argc < 2)
-    return PAM_SUCCESS;
-
-  char* device_name = encode_device_name(argv[0]);
+  PENTRY config = config_load(CONFIGFILE);
+  const char* source = map_get(&config, "source", NULL);
+  const char* target = map_get(&config, "target", NULL);
+  
+  char* device_name = encode_device_name(source);
   if (device_name == NULL) {
     return PAM_SUCCESS;
   }
@@ -160,8 +164,8 @@ PAM_EXTERN int pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, con
 
   struct libmnt_context *cxt = mnt_new_context();
   if (cxt) {
-    mnt_context_set_source(cxt, argv[0]);
-    mnt_context_set_target(cxt, argv[1]);
+    mnt_context_set_source(cxt, device_name_path);
+    mnt_context_set_target(cxt, target);
     
     int ret;
     if ((ret = mnt_context_umount(cxt)))
