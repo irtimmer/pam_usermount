@@ -66,8 +66,11 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
   int ret;
   if ((ret = pam_get_item(pamh, PAM_AUTHTOK, (const void**) &ptr)) == PAM_SUCCESS && ptr != NULL)
     authtok = strdup(ptr);
-  else
+  else {
     pam_prompt(pamh, PAM_PROMPT_ECHO_OFF, &authtok, "Password: ");
+    if ((ret = pam_set_item(pamh, PAM_AUTHTOK, authtok)) != PAM_SUCCESS)
+      printf("Failed to set password");
+  }
 
   if (authtok != NULL) {
     if ((ret = pam_set_data(pamh, "pam_mounter_authtok", authtok, clean_authtok)) == PAM_SUCCESS) {
