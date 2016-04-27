@@ -22,15 +22,60 @@
 
 #include <security/pam_appl.h>
 #include <security/pam_modules.h>
+#include <security/pam_ext.h>
 #include <libmount.h>
+#include <libcryptsetup.h>
 
+#include <sys/mman.h>
 #include <stdio.h>
+#include <malloc.h>
+#include <string.h>
+#include <ctype.h>
+#include <errno.h>
+
+static char* encode_device_name(const char* device) {
+  char* device_name = strdup(device);
+  if (device_name == NULL) {
+    return NULL;
+  }
+
+  for (char* c = device_name; *c != '\0'; ++c) {
+    if (!isalpha(*c) && !isdigit(*c))
+      *c = '_';
+  }
+
+  return device_name;
+}
 
 PAM_EXTERN int pam_sm_setcred(pam_handle_t *pamh, int flags, int argc, const char **argv) {
   return PAM_SUCCESS;
 }
 
+static void clean_authtok(pam_handle_t *pamh, void *data, int errcode) {
+  if (data != NULL) {
+    unsigned int len = strlen(data) + 1;
+    memset(data, 0, len);
+    munlock(data, len);
+    free(data);
+  }
+}
+
 PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv) {
+  const char *ptr = NULL;
+  char* authtok;
+  int ret;
+  if ((ret = pam_get_item(pamh, PAM_AUTHTOK, (const void**) &ptr)) == PAM_SUCCESS && ptr != NULL)
+    authtok = strdup(ptr);
+  else
+    pam_prompt(pamh, PAM_PROMPT_ECHO_OFF, &authtok, "Password: ");
+
+  if (authtok != NULL) {
+    if ((ret = pam_set_data(pamh, "pam_mounter_authtok", authtok, clean_authtok)) == PAM_SUCCESS) {
+      if (mlock(authtok, strlen(authtok) + 1) < 0)
+        printf("mlock authtok: %s\n", strerror(errno));
+    }
+  }
+
   return PAM_SUCCESS;
 }
 
@@ -39,9 +84,43 @@ PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, cons
   if (argc < 2)
     return PAM_SUCCESS;
 
+  int r;
+  const char *authtok = NULL;
+  if ((r = pam_get_data(pamh, "pam_mounter_authtok", (const void**) &authtok)) != PAM_SUCCESS)
+    return PAM_SUCCESS;
+
+  struct crypt_device *cd;
+  if ((r = crypt_init(&cd, argv[0])) < 0) {
+    printf("crypt_init() failed for %s.\n", argv[0]);
+    return PAM_SUCCESS;
+  }
+
+  if ((r = crypt_load(cd, CRYPT_LUKS1, NULL)) < 0) {
+    printf("crypt_load() failed on device %s.\n", crypt_get_device_name(cd));
+    crypt_free(cd);
+    return PAM_SUCCESS;
+  }
+
+  char* device_name = encode_device_name(argv[0]);
+  if (device_name == NULL) {
+    crypt_free(cd);
+    return PAM_SUCCESS;
+  }
+
+  if ((r = crypt_activate_by_passphrase(cd, device_name, CRYPT_ANY_SLOT, authtok, strlen(authtok), 0)) < 0) {
+    printf("Device %s activation failed.\n", device_name);
+    crypt_free(cd);
+    free(device_name);
+    return PAM_SUCCESS;
+  };
+
+  char* device_name_path = malloc(strlen(crypt_get_dir()) + 1 + strlen(device_name) + 1);
+  sprintf(device_name_path, "%s/%s", crypt_get_dir(), device_name);
+  crypt_free(cd);
+
   struct libmnt_context *cxt = mnt_new_context();
   if (cxt) {
-    mnt_context_set_source(cxt, argv[0]);
+    mnt_context_set_source(cxt, device_name_path);
     mnt_context_set_target(cxt, argv[1]);
     
     int ret;
@@ -54,6 +133,8 @@ PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, cons
   } else
     printf("no context\n");
 
+  free(device_name);
+  free(device_name_path);
   return PAM_SUCCESS;
 }
 
@@ -61,6 +142,18 @@ PAM_EXTERN int pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, con
   //Skip no arguments
   if (argc < 2)
     return PAM_SUCCESS;
+
+  char* device_name = encode_device_name(argv[0]);
+  if (device_name == NULL) {
+    return PAM_SUCCESS;
+  }
+
+  char* device_name_path = malloc(strlen(crypt_get_dir()) + 1 + strlen(device_name) + 1);
+  if (device_name == NULL) {
+    free(device_name);
+    return PAM_SUCCESS;
+  }
+  sprintf(device_name_path, "%s/%s", crypt_get_dir(), device_name);
 
   struct libmnt_context *cxt = mnt_new_context();
   if (cxt) {
@@ -77,5 +170,30 @@ PAM_EXTERN int pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, con
   } else
     printf("no context\n");
 
+  struct crypt_device *cd;
+  int r;
+
+  if ((r = crypt_init_by_name(&cd, device_name)) >= 0) {
+    if (crypt_status(cd, device_name) != CRYPT_ACTIVE) {
+      printf("Something failed perhaps, device %s is not active.\n", device_name);
+      free(device_name_path);
+      free(device_name);
+      crypt_free(cd);
+      return PAM_SUCCESS;
+    }
+    if ((r = crypt_deactivate(cd, device_name)) < 0) {
+      printf("crypt_deactivate() failed.\n");
+      free(device_name_path);
+      free(device_name);
+      crypt_free(cd);
+      return PAM_SUCCESS;
+    }
+    printf("Device %s is now deactivated.\n", device_name);
+    crypt_free(cd);
+  } else
+    printf("crypt_init_by_name() failed for %s.\n", device_name);
+
+  free(device_name_path);
+  free(device_name);
   return PAM_SUCCESS;
 }
