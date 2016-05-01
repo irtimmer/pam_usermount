@@ -18,6 +18,8 @@
  */
 
 #include "config.h"
+#include "mounter.h"
+#include "crypt.h"
 
 #define PAM_SM_AUTH
 #define PAM_SM_SESSION
@@ -25,7 +27,6 @@
 #include <security/pam_appl.h>
 #include <security/pam_modules.h>
 #include <security/pam_ext.h>
-#include <libmount.h>
 #include <libcryptsetup.h>
 
 #include <sys/mman.h>
@@ -87,27 +88,14 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
 }
 
 PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv) {
-  int r;
+  int ret;
   const char *authtok = NULL;
-  if ((r = pam_get_data(pamh, "pam_mounter_authtok", (const void**) &authtok)) != PAM_SUCCESS)
+  if ((ret = pam_get_data(pamh, "pam_mounter_authtok", (const void**) &authtok)) != PAM_SUCCESS)
     return PAM_SUCCESS;
 
   PENTRY config = config_load(CONFIGFILE);
   const char* source = map_get(&config, "source", NULL);
   const char* target = map_get(&config, "target", NULL);
-
-  struct crypt_device *cd = NULL;
-  struct libmnt_context *cxt = NULL;
-
-  if ((r = crypt_init(&cd, source)) < 0) {
-    printf("crypt_init() failed for %s.\n", source);
-    goto cleanup;
-  }
-
-  if ((r = crypt_load(cd, CRYPT_LUKS1, NULL)) < 0) {
-    printf("crypt_load() failed on device %s.\n", crypt_get_device_name(cd));
-    goto cleanup;
-  }
 
   char* device_name = encode_device_name(source);
   if (device_name == NULL) {
@@ -115,34 +103,20 @@ PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, cons
     goto cleanup;
   }
 
-  if ((r = crypt_activate_by_passphrase(cd, device_name, CRYPT_ANY_SLOT, authtok, strlen(authtok), 0)) < 0) {
-    printf("Device %s activation failed.\n", device_name);
+  if ((ret = crypt_unlock(source, authtok, device_name)) < 0) {
+    printf("Device %s activation failed: %d\n", device_name, ret);
     goto cleanup;
-  };
+  }
 
   char* device_name_path = malloc(strlen(crypt_get_dir()) + 1 + strlen(device_name) + 1);
   sprintf(device_name_path, "%s/%s", crypt_get_dir(), device_name);
 
-  cxt = mnt_new_context();
-  if (cxt) {
-    mnt_context_set_source(cxt, device_name_path);
-    mnt_context_set_target(cxt, target);
-    
-    int ret;
-    if ((ret = mnt_context_mount(cxt)))
-      printf("mount failed: %d, %d\n", ret, mnt_context_get_syscall_errno(cxt));
-    else
-      printf("succesfully mounted\n");
-  } else
-    printf("no context\n");
+  if ((ret = mounter_mount(device_name_path, target)))
+    printf("mount failed: %d\n", ret);
+  else
+    printf("succesfully mounted\n");
 
   cleanup:
-  if (cd != NULL)
-    crypt_free(cd);
-
-  if (cxt != NULL)
-    mnt_free_context(cxt);
-
   if (device_name != NULL)
     free(device_name);
 
@@ -157,9 +131,6 @@ PAM_EXTERN int pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, con
   const char* source = map_get(&config, "source", NULL);
   const char* target = map_get(&config, "target", NULL);
   
-  struct crypt_device *cd = NULL;
-  struct libmnt_context *cxt = NULL;
-
   char* device_name = encode_device_name(source);
   if (device_name == NULL) {
     printf("Can't encode source device\n");
@@ -173,41 +144,19 @@ PAM_EXTERN int pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, con
   }
   sprintf(device_name_path, "%s/%s", crypt_get_dir(), device_name);
 
-  cxt = mnt_new_context();
-  if (cxt) {
-    mnt_context_set_source(cxt, device_name_path);
-    mnt_context_set_target(cxt, target);
-    
-    int ret;
-    if ((ret = mnt_context_umount(cxt)))
-      printf("umount failed: %d, %d\n", ret, mnt_context_get_syscall_errno(cxt));
-    else
-      printf("succesfully unmounted\n");
+  int ret;
+  if ((ret = mounter_umount(device_name_path, target))) {
+    printf("umount failed: %d\n", ret);
+    goto cleanup;
   } else
-    printf("no context\n");
+    printf("succesfully unmounted\n");
 
-  int r;
-
-  if ((r = crypt_init_by_name(&cd, device_name)) >= 0) {
-    if (crypt_status(cd, device_name) != CRYPT_ACTIVE) {
-      printf("Something failed perhaps, device %s is not active.\n", device_name);
-      goto cleanup;
-    }
-    if ((r = crypt_deactivate(cd, device_name)) < 0) {
-      printf("crypt_deactivate() failed.\n");
-      goto cleanup;
-    }
+  if ((ret = crypt_lock(source, device_name) < 0))
+    printf("crypt_deactivate() failed: %d\n", ret);
+  else
     printf("Device %s is now deactivated.\n", device_name);
-  } else
-    printf("crypt_init_by_name() failed for %s.\n", device_name);
 
   cleanup:
-  if (cd != NULL)
-    crypt_free(cd);
-
-  if (cxt != NULL)
-    mnt_free_context(cxt);
-
   if (device_name_path != NULL)
     free(device_name_path);
 

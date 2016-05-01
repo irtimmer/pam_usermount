@@ -10,7 +10,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(MOUNT mount)
 pkg_check_modules(CRYPTSETUP libcryptsetup)
 
-aux_source_directory(./src SRC_LIST)
+aux_source_directory(./src _SRC_LIST)
 add_library(pam_mounter SHARED ${SRC_LIST})
 set_target_properties (pam_mounter PROPERTIES PREFIX "")
 target_include_directories(pam_mounter PRIVATE ${PAM_INCLUDE_DIR} ${MOUNT_INCLUDE_DIRS} ${CRYPTSETUP_INCLUDE_DIRS})
