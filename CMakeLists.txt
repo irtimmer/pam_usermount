@@ -16,4 +16,8 @@ set_target_properties (pam_mounter PROPERTIES PREFIX "")
 target_include_directories(pam_mounter PRIVATE ${PAM_INCLUDE_DIR} ${MOUNT_INCLUDE_DIRS} ${CRYPTSETUP_INCLUDE_DIRS})
 target_link_libraries(pam_mounter ${PAM_LIBRARY} ${MOUNT_LIBRARIES} ${CRYPTSETUP_LIBRARIES})
 
+aux_source_directory(./src/pmcount PMCOUNT_SRC_LIST)
+add_executable(pmcount ${PMCOUNT_SRC_LIST})
+
 install(TARGETS pam_mounter DESTINATION ${CMAKE_INSTALL_LIBDIR}/security)
+install(TARGETS pmcount DESTINATION ${CMAKE_INSTALL_BINDIR})

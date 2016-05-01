@@ -37,6 +37,7 @@
 #include <errno.h>
 
 #define CONFIGFILE "/etc/security/pam_mounter.conf"
+#define PMCOUNT_CMD "pmcount"
 
 static char* encode_device_name(const char* device) {
   char* device_name = strdup(device);
@@ -50,6 +51,19 @@ static char* encode_device_name(const char* device) {
   }
 
   return device_name;
+}
+
+static int get_count(const char* user, int amount) {
+  char* cmd = malloc(strlen(PMCOUNT_CMD) + 1 + strlen(user) + 1 + 2 + 1);
+  sprintf(cmd, PMCOUNT_CMD " %s %d", user, amount);
+  FILE *fp = popen(cmd, "r");
+
+  int count = 0;
+  if (fp != NULL) {
+    fscanf(fp, "%d", &count);
+    fclose(fp);
+  }
+  return count;
 }
 
 PAM_EXTERN int pam_sm_setcred(pam_handle_t *pamh, int flags, int argc, const char **argv) {
@@ -88,9 +102,16 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
 }
 
 PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv) {
+  const char* user;
+  if (pam_get_user(pamh, &user, NULL) != PAM_SUCCESS)
+    return PAM_SUCCESS;
+
   int ret;
   const char *authtok = NULL;
   if ((ret = pam_get_data(pamh, "pam_mounter_authtok", (const void**) &authtok)) != PAM_SUCCESS)
+    return PAM_SUCCESS;
+
+  if (get_count(user, 1) > 1)
     return PAM_SUCCESS;
 
   PENTRY config = config_load(CONFIGFILE);
@@ -127,6 +148,13 @@ PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, cons
 }
 
 PAM_EXTERN int pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, const char **argv) {
+  const char* user;
+  if (pam_get_user(pamh, &user, NULL) != PAM_SUCCESS)
+    return PAM_SUCCESS;
+
+  if (get_count(user, -1) > 0)
+    return PAM_SUCCESS;
+
   PENTRY config = config_load(CONFIGFILE);
   const char* source = map_get(&config, "source", NULL);
   const char* target = map_get(&config, "target", NULL);
