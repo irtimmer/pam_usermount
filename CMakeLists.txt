@@ -21,3 +21,4 @@ add_executable(pmcount ${PMCOUNT_SRC_LIST})
 
 install(TARGETS pam_mounter DESTINATION ${CMAKE_INSTALL_LIBDIR}/security)
 install(TARGETS pmcount DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES pam_mounter.conf DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/security)
