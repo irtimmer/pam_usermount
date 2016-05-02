@@ -22,20 +22,24 @@
 #include <stdio.h>
 
 PENTRY config_load(const char* filename) {
-  PENTRY map;
   FILE* fd = fopen(filename, "r");
   if (fd == NULL) {
     fprintf(stderr, "Can't open configuration file: %s\n", filename);
     return NULL;
   }
 
+  PENTRY map = NULL;
   char *line = NULL;
   size_t len = 0;
 
   while (getline(&line, &len, fd) != -1) {
     char *key = NULL, *value = NULL;
-    if (sscanf(line, "%ms = %m[^\n]", &key, &value) == 2)
-      map_put(&map, key, value);
+    if (sscanf(line, "[%m[^]]]", &key) == 1)
+      map_put(&map, key, NULL);
+    else if (sscanf(line, "%ms = %m[^\n]", &key, &value) == 2) {
+      if (map != NULL)
+        map_put((PENTRY*) &map->value, key, value);
+    }
   }
 
   fclose(fd);

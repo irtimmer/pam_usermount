@@ -21,9 +21,9 @@
 
 typedef struct _ENTRY {
   const char* key;
-  const char* value;
+  const void* value;
   struct _ENTRY* next;
 } ENTRY, *PENTRY;
 
-void map_put(PENTRY* map, const char* key, const char* value);
-const char* map_get(PENTRY* map, const char* key, const char* ret);
+void map_put(PENTRY* map, const char* key, const void* value);
+const void* map_get(PENTRY* map, const char* key, const void* ret);

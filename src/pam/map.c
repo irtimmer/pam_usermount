@@ -22,7 +22,7 @@
 #include <malloc.h>
 #include <string.h>
 
-void map_put(PENTRY* map, const char* key, const char* value) {
+void map_put(PENTRY* map, const char* key, const void* value) {
   PENTRY entry = malloc(sizeof(ENTRY));
   entry->value = value;
   entry->key = key;
@@ -30,7 +30,7 @@ void map_put(PENTRY* map, const char* key, const char* value) {
   *map = entry;
 }
 
-const char* map_get(PENTRY* map, const char* key, const char* ret) {
+const void* map_get(PENTRY* map, const char* key, const void* ret) {
   PENTRY entry = *map;
   while (entry != NULL) {
     if (strcmp(key, entry->key) == 0)

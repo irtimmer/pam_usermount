@@ -101,20 +101,7 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
   return PAM_SUCCESS;
 }
 
-PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv) {
-  const char* user;
-  if (pam_get_user(pamh, &user, NULL) != PAM_SUCCESS)
-    return PAM_SUCCESS;
-
-  int ret;
-  const char *authtok = NULL;
-  if ((ret = pam_get_data(pamh, "pam_mounter_authtok", (const void**) &authtok)) != PAM_SUCCESS)
-    return PAM_SUCCESS;
-
-  if (get_count(user, 1) > 1)
-    return PAM_SUCCESS;
-
-  PENTRY config = config_load(CONFIGFILE);
+static void pam_open_mount(PENTRY config, const char* authtok) {
   const char* source = map_get(&config, "source", NULL);
   const char* target = map_get(&config, "target", NULL);
 
@@ -124,6 +111,7 @@ PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, cons
     goto cleanup;
   }
 
+  int ret;
   if ((ret = crypt_unlock(source, authtok, device_name)) < 0) {
     printf("Device %s activation failed: %d\n", device_name, ret);
     goto cleanup;
@@ -143,19 +131,34 @@ PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, cons
 
   if (device_name_path != NULL)
     free(device_name_path);
-
-  return PAM_SUCCESS;
 }
 
-PAM_EXTERN int pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, const char **argv) {
+PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv) {
   const char* user;
   if (pam_get_user(pamh, &user, NULL) != PAM_SUCCESS)
     return PAM_SUCCESS;
 
-  if (get_count(user, -1) > 0)
+  int ret;
+  const char *authtok = NULL;
+  if ((ret = pam_get_data(pamh, "pam_mounter_authtok", (const void**) &authtok)) != PAM_SUCCESS)
+    return PAM_SUCCESS;
+
+  if (get_count(user, 1) > 1)
     return PAM_SUCCESS;
 
   PENTRY config = config_load(CONFIGFILE);
+  while (config != NULL) {
+    PENTRY section = (PENTRY) config->value;
+    if (strcmp(config->key, "mount") == 0 && strcmp(map_get(&section, "user", user), user) == 0)
+      pam_open_mount(section, authtok);
+
+    config = config->next;
+  }
+
+  return PAM_SUCCESS;
+}
+
+static void pam_close_mount(PENTRY config) {
   const char* source = map_get(&config, "source", NULL);
   const char* target = map_get(&config, "target", NULL);
   
@@ -190,6 +193,24 @@ PAM_EXTERN int pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, con
 
   if (device_name != NULL)
     free(device_name);
+}
+
+PAM_EXTERN int pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, const char **argv) {
+  const char* user;
+  if (pam_get_user(pamh, &user, NULL) != PAM_SUCCESS)
+    return PAM_SUCCESS;
+
+  if (get_count(user, -1) > 0)
+    return PAM_SUCCESS;
+
+  PENTRY config = config_load(CONFIGFILE);
+  while (config != NULL) {
+    PENTRY section = (PENTRY) config->value;
+    if (strcmp(config->key, "mount") == 0 && strcmp(map_get(&section, "user", user), user) == 0)
+      pam_close_mount(section);
+
+    config = config->next;
+  }
 
   return PAM_SUCCESS;
 }
