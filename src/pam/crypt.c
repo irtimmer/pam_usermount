@@ -28,7 +28,9 @@ int crypt_unlock(const char* path, const char* authtok, const char* name, int fl
   if ((ret = crypt_init(&cd, path)) < 0)
     fprintf(stderr, "pam_mounter: crypt_init() failed for '%s': %d\n", path, ret);
   else {
-    if ((ret = crypt_load(cd, CRYPT_LUKS1, NULL)) >= 0)
+    if (crypt_status(cd, name) == CRYPT_ACTIVE)
+      fprintf(stderr, "pam_mounter: Device %s is already active\n", name);
+    else if ((ret = crypt_load(cd, CRYPT_LUKS1, NULL)) >= 0)
       ret = crypt_activate_by_passphrase(cd, name, CRYPT_ANY_SLOT, authtok, strlen(authtok), flags);
 
     crypt_free(cd);
