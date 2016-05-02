@@ -26,9 +26,7 @@ static struct libmnt_context* mounter_create_context(const char* source, const c
   if (cxt) {
     mnt_context_set_source(cxt, source);
     mnt_context_set_target(cxt, target);
-  } else
-    printf("no context\n");
-
+  }
   return cxt;
 }
 

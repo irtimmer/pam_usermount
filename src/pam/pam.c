@@ -56,13 +56,13 @@ static char* encode_device_name(const char* device) {
 static int get_count(const char* user, int amount) {
   char* cmd = malloc(strlen(PMCOUNT_CMD) + 1 + strlen(user) + 1 + 2 + 1);
   if (cmd == NULL)
-    return 0;
+    return -1;
 
   sprintf(cmd, PMCOUNT_CMD " %s %d", user, amount);
   FILE *fp = popen(cmd, "r");
   free(cmd);
 
-  int count = 0;
+  int count = -1;
   if (fp != NULL) {
     fscanf(fp, "%d", &count);
     fclose(fp);
@@ -96,13 +96,13 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
   else {
     pam_prompt(pamh, PAM_PROMPT_ECHO_OFF, &authtok, "Password: ");
     if ((ret = pam_set_item(pamh, PAM_AUTHTOK, authtok)) != PAM_SUCCESS)
-      printf("Failed to set password");
+      fprintf(stderr, "pam_mounter: Failed to set password");
   }
 
   if (authtok != NULL) {
     if ((ret = pam_set_data(pamh, "pam_mounter_authtok", authtok, clean_authtok)) == PAM_SUCCESS) {
       if (mlock(authtok, strlen(authtok) + 1) < 0)
-        printf("mlock authtok: %s\n", strerror(errno));
+        fprintf(stderr, "pam_mounter: Failed to memory lock authtok: %s\n", strerror(errno));
     }
   }
 
@@ -118,27 +118,25 @@ static void pam_open_mount(PENTRY config, const char* authtok) {
 
   device_name = encode_device_name(source);
   if (device_name == NULL) {
-    printf("Can't encode device name\n");
+    fprintf(stderr, "pam_mounter: Not enough memory\n");
     goto cleanup;
   }
 
   int ret;
   if ((ret = crypt_unlock(source, authtok, device_name)) < 0) {
-    printf("Device %s activation failed: %d\n", device_name, ret);
+    fprintf(stderr, "pam_mounter: Device %s activation failed: %d\n", device_name, ret);
     goto cleanup;
   }
 
   device_name_path = malloc(strlen(crypt_get_dir()) + 1 + strlen(device_name) + 1);
   if (device_name_path == NULL) {
-    printf("Can't create device path\n");
+    fprintf(stderr, "pam_mounter: Not enough memory\n");
     goto cleanup;
   }
   sprintf(device_name_path, "%s/%s", crypt_get_dir(), device_name);
 
   if ((ret = mounter_mount(device_name_path, target)))
-    printf("mount failed: %d\n", ret);
-  else
-    printf("succesfully mounted\n");
+    fprintf(stderr, "pam_mounter: Mount failed for '%s' on '%s': %s\n", device_name_path, target, strerror(errno));
 
   cleanup:
   if (device_name != NULL)
@@ -150,13 +148,17 @@ static void pam_open_mount(PENTRY config, const char* authtok) {
 
 PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv) {
   const char* user;
-  if (pam_get_user(pamh, &user, NULL) != PAM_SUCCESS)
+  if (pam_get_user(pamh, &user, NULL) != PAM_SUCCESS) {
+    fprintf(stderr, "pam_mounter: Can't get username\n");
     return PAM_SUCCESS;
+  }
 
   int ret;
   const char *authtok = NULL;
-  if ((ret = pam_get_data(pamh, "pam_mounter_authtok", (const void**) &authtok)) != PAM_SUCCESS)
+  if ((ret = pam_get_data(pamh, "pam_mounter_authtok", (const void**) &authtok)) != PAM_SUCCESS) {
+    fprintf(stderr, "pam_mounter: Can't get auth token\n");
     return PAM_SUCCESS;
+  }
 
   if (get_count(user, 1) > 1)
     return PAM_SUCCESS;
@@ -182,28 +184,25 @@ static void pam_close_mount(PENTRY config) {
   
   device_name = encode_device_name(source);
   if (device_name == NULL) {
-    printf("Can't encode source device\n");
+    fprintf(stderr, "pam_mounter: Not enough memory\n");
     goto cleanup;
   }
 
   device_name_path = malloc(strlen(crypt_get_dir()) + 1 + strlen(device_name) + 1);
   if (device_name_path == NULL) {
-    printf("Can't create device path\n");
+    fprintf(stderr, "pam_mounter: Not enough memory\n");
     goto cleanup;
   }
   sprintf(device_name_path, "%s/%s", crypt_get_dir(), device_name);
 
   int ret;
   if ((ret = mounter_umount(device_name_path, target))) {
-    printf("umount failed: %d\n", ret);
+    fprintf(stderr, "pam_mounter: Mount failed for '%s' on '%s': %s\n", device_name_path, target, strerror(errno));
     goto cleanup;
-  } else
-    printf("succesfully unmounted\n");
+  }
 
   if ((ret = crypt_lock(source, device_name) < 0))
-    printf("crypt_deactivate() failed: %d\n", ret);
-  else
-    printf("Device %s is now deactivated.\n", device_name);
+    fprintf(stderr, "pam_mounter: Device %s deactivation failed: %d\n", device_name, ret);
 
   cleanup:
   if (device_name_path != NULL)
@@ -215,8 +214,10 @@ static void pam_close_mount(PENTRY config) {
 
 PAM_EXTERN int pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, const char **argv) {
   const char* user;
-  if (pam_get_user(pamh, &user, NULL) != PAM_SUCCESS)
+  if (pam_get_user(pamh, &user, NULL) != PAM_SUCCESS) {
+    fprintf(stderr, "pam_mounter: Can't get username\n");
     return PAM_SUCCESS;
+  }
 
   if (get_count(user, -1) > 0)
     return PAM_SUCCESS;

@@ -26,7 +26,7 @@ static struct crypt_device* crypt_create_context(const char* path) {
   struct crypt_device *cd = NULL;
   int ret;
   if ((ret = crypt_init(&cd, path)) < 0)
-    printf("crypt_init() failed for %s.\n", path);
+    fprintf(stderr, "pam_mounter: crypt_init() failed for '%s': %d\n", path, ret);
 
   return cd;
 }
@@ -35,9 +35,7 @@ int crypt_unlock(const char* path, const char* authtok, const char* name) {
   int ret = -1;
   struct crypt_device *cd = crypt_create_context(path);
   if (cd) {
-    if ((ret = crypt_load(cd, CRYPT_LUKS1, NULL)) < 0)
-      printf("crypt_load() failed on device %s.\n", crypt_get_device_name(cd));
-    else
+    if ((ret = crypt_load(cd, CRYPT_LUKS1, NULL)) >= 0)
       ret = crypt_activate_by_passphrase(cd, name, CRYPT_ANY_SLOT, authtok, strlen(authtok), 0);
 
     crypt_free(cd);
@@ -51,7 +49,7 @@ int crypt_lock(const char* path, const char* name) {
   struct crypt_device *cd = crypt_create_context(path);
   if (cd) {
     if (crypt_status(cd, name) != CRYPT_ACTIVE)
-      printf("Something failed perhaps, device %s is not active.\n", name);
+      fprintf(stderr, "pam_mounter: Device %s isn't active\n", name);
     else 
       ret = crypt_deactivate(cd, name);
 

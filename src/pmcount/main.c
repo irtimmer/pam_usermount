@@ -167,7 +167,7 @@ int main(int argc, const char **argv) {
 
   struct passwd *pent;
   if ((pent = getpwnam(user)) == NULL) {
-    printf("Can't open %s\n", user);
+    fprintf(stderr, "Can't get info for user '%s'\n", user);
     return EXIT_FAILURE;
   }
 
@@ -177,19 +177,22 @@ int main(int argc, const char **argv) {
   int fd;
   while ((fd = open_and_lock(filename, pent->pw_uid)) == -EAGAIN);
   if (fd < 0) {
-    printf("ERROR: %s\n", strerror(-fd));
+    fprintf(stderr, "Can't open and lock file '%s': %s\n", filename, strerror(-fd));
     return EXIT_FAILURE;
   }
 
   int val;
   if ((val = read_count(fd, filename)) < 0) {
+    fprintf(stderr, "Can't read count from file '%s': %s\n", filename, strerror(-val));
     close(fd);
     return EXIT_FAILURE;
   }
 
   int ret = 1;
-  if (amount != 0)
-    ret = write_count(fd, filename, val + amount);
+  if (amount != 0) {
+    if ((ret = write_count(fd, filename, val + amount)) < 0)
+      fprintf(stderr, "Can't write count to file '%s': %s\n", filename, strerror(-val));
+  }
 
   close(fd);
   if (ret < 0)
