@@ -116,27 +116,30 @@ static void pam_open_mount(PENTRY config, const char* authtok) {
   const char* source = map_get(&config, "source", NULL);
   const char* target = map_get(&config, "target", NULL);
 
-  device_name = encode_device_name(source);
-  if (device_name == NULL) {
-    fprintf(stderr, "pam_mounter: Not enough memory\n");
-    goto cleanup;
-  }
-
   int ret;
-  if ((ret = crypt_unlock(source, authtok, device_name)) < 0) {
-    fprintf(stderr, "pam_mounter: Device %s activation failed: %d\n", device_name, ret);
-    goto cleanup;
+  if (strcmp(map_get(&config, "helper", ""), "crypt") == 0) {
+    device_name = encode_device_name(source);
+    if (device_name == NULL) {
+        fprintf(stderr, "pam_mounter: Not enough memory\n");
+        goto cleanup;
+    }
+
+    if ((ret = crypt_unlock(source, authtok, device_name)) < 0) {
+        fprintf(stderr, "pam_mounter: Device %s activation failed: %d\n", device_name, ret);
+        goto cleanup;
+    }
+
+    device_name_path = malloc(strlen(crypt_get_dir()) + 1 + strlen(device_name) + 1);
+    if (device_name_path == NULL) {
+        fprintf(stderr, "pam_mounter: Not enough memory\n");
+        goto cleanup;
+    }
+    sprintf(device_name_path, "%s/%s", crypt_get_dir(), device_name);
+    source = device_name_path;
   }
 
-  device_name_path = malloc(strlen(crypt_get_dir()) + 1 + strlen(device_name) + 1);
-  if (device_name_path == NULL) {
-    fprintf(stderr, "pam_mounter: Not enough memory\n");
-    goto cleanup;
-  }
-  sprintf(device_name_path, "%s/%s", crypt_get_dir(), device_name);
-
-  if ((ret = mounter_mount(device_name_path, target)))
-    fprintf(stderr, "pam_mounter: Mount failed for '%s' on '%s': %s\n", device_name_path, target, strerror(errno));
+  if ((ret = mounter_mount(source, target)))
+    fprintf(stderr, "pam_mounter: Mount failed for '%s' on '%s': %s\n", source, target, strerror(errno));
 
   cleanup:
   if (device_name != NULL)
@@ -182,26 +185,29 @@ static void pam_close_mount(PENTRY config) {
   const char* source = map_get(&config, "source", NULL);
   const char* target = map_get(&config, "target", NULL);
   
-  device_name = encode_device_name(source);
-  if (device_name == NULL) {
-    fprintf(stderr, "pam_mounter: Not enough memory\n");
-    goto cleanup;
-  }
+  if (strcmp(map_get(&config, "helper", ""), "crypt") == 0) {
+    device_name = encode_device_name(source);
+    if (device_name == NULL) {
+        fprintf(stderr, "pam_mounter: Not enough memory\n");
+        goto cleanup;
+    }
 
-  device_name_path = malloc(strlen(crypt_get_dir()) + 1 + strlen(device_name) + 1);
-  if (device_name_path == NULL) {
-    fprintf(stderr, "pam_mounter: Not enough memory\n");
-    goto cleanup;
+    device_name_path = malloc(strlen(crypt_get_dir()) + 1 + strlen(device_name) + 1);
+    if (device_name_path == NULL) {
+        fprintf(stderr, "pam_mounter: Not enough memory\n");
+        goto cleanup;
+    }
+    sprintf(device_name_path, "%s/%s", crypt_get_dir(), device_name);
+    source = device_name_path;
   }
-  sprintf(device_name_path, "%s/%s", crypt_get_dir(), device_name);
 
   int ret;
-  if ((ret = mounter_umount(device_name_path, target))) {
-    fprintf(stderr, "pam_mounter: Mount failed for '%s' on '%s': %s\n", device_name_path, target, strerror(errno));
+  if ((ret = mounter_umount(source, target))) {
+    fprintf(stderr, "pam_mounter: Mount failed for '%s' on '%s': %s\n", source, target, strerror(errno));
     goto cleanup;
   }
 
-  if ((ret = crypt_lock(source, device_name) < 0))
+  if (device_name != NULL && (ret = crypt_lock(device_name) < 0))
     fprintf(stderr, "pam_mounter: Device %s deactivation failed: %d\n", device_name, ret);
 
   cleanup:

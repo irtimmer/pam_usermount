@@ -22,19 +22,12 @@
 #include <stdio.h>
 #include <string.h>
 
-static struct crypt_device* crypt_create_context(const char* path) {
-  struct crypt_device *cd = NULL;
-  int ret;
-  if ((ret = crypt_init(&cd, path)) < 0)
-    fprintf(stderr, "pam_mounter: crypt_init() failed for '%s': %d\n", path, ret);
-
-  return cd;
-}
-
 int crypt_unlock(const char* path, const char* authtok, const char* name) {
   int ret = -1;
-  struct crypt_device *cd = crypt_create_context(path);
-  if (cd) {
+  struct crypt_device *cd = NULL;
+  if ((ret = crypt_init(&cd, path)) < 0)
+    fprintf(stderr, "pam_mounter: crypt_init() failed for '%s': %d\n", path, ret);
+  else {
     if ((ret = crypt_load(cd, CRYPT_LUKS1, NULL)) >= 0)
       ret = crypt_activate_by_passphrase(cd, name, CRYPT_ANY_SLOT, authtok, strlen(authtok), 0);
 
@@ -44,10 +37,12 @@ int crypt_unlock(const char* path, const char* authtok, const char* name) {
   return ret;
 }
 
-int crypt_lock(const char* path, const char* name) {
+int crypt_lock(const char* name) {
   int ret = -1;
-  struct crypt_device *cd = crypt_create_context(path);
-  if (cd) {
+  struct crypt_device *cd = NULL;
+  if ((ret = crypt_init_by_name(&cd, name)) < 0)
+    fprintf(stderr, "pam_mounter: crypt_init_by_name() failed for '%s': %d\n", name, ret);
+  else {
     if (crypt_status(cd, name) != CRYPT_ACTIVE)
       fprintf(stderr, "pam_mounter: Device %s isn't active\n", name);
     else 

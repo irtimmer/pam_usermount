@@ -20,4 +20,4 @@
 #pragma once
 
 int crypt_unlock(const char* path, const char* authtok, const char* name);
-int crypt_lock(const char* path, const char* name);
+int crypt_lock(const char* name);
