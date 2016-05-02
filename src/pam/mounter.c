@@ -30,9 +30,10 @@ static struct libmnt_context* mounter_create_context(const char* source, const c
   return cxt;
 }
 
-int mounter_mount(const char* source, const char* target) {
+int mounter_mount(const char* source, const char* target, const char* options) {
     int ret = 0;
     struct libmnt_context *cxt = mounter_create_context(source, target);
+    mnt_context_set_options(cxt, options);
     if (cxt != NULL) {
       ret = mnt_context_mount(cxt);
       mnt_free_context(cxt);

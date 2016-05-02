@@ -139,7 +139,7 @@ static void pam_open_mount(PENTRY config, const char* authtok) {
     source = device_name_path;
   }
 
-  if ((ret = mounter_mount(source, target)))
+  if ((ret = mounter_mount(source, target, map_get(&config, "options", "defaults"))))
     fprintf(stderr, "pam_mounter: Mount failed for '%s' on '%s': %s\n", source, target, strerror(errno));
 
   cleanup:

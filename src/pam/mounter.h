@@ -19,5 +19,5 @@
 
 #pragma once
 
-int mounter_mount(const char* source, const char* target);
+int mounter_mount(const char* source, const char* target, const char* options);
 int mounter_umount(const char* source, const char* target);
