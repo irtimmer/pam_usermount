@@ -55,8 +55,12 @@ static char* encode_device_name(const char* device) {
 
 static int get_count(const char* user, int amount) {
   char* cmd = malloc(strlen(PMCOUNT_CMD) + 1 + strlen(user) + 1 + 2 + 1);
+  if (cmd == NULL)
+    return 0;
+
   sprintf(cmd, PMCOUNT_CMD " %s %d", user, amount);
   FILE *fp = popen(cmd, "r");
+  free(cmd);
 
   int count = 0;
   if (fp != NULL) {
@@ -102,10 +106,13 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
 }
 
 static void pam_open_mount(PENTRY config, const char* authtok) {
+  char* device_name_path = NULL;
+  char* device_name = NULL;
+
   const char* source = map_get(&config, "source", NULL);
   const char* target = map_get(&config, "target", NULL);
 
-  char* device_name = encode_device_name(source);
+  device_name = encode_device_name(source);
   if (device_name == NULL) {
     printf("Can't encode device name\n");
     goto cleanup;
@@ -117,7 +124,11 @@ static void pam_open_mount(PENTRY config, const char* authtok) {
     goto cleanup;
   }
 
-  char* device_name_path = malloc(strlen(crypt_get_dir()) + 1 + strlen(device_name) + 1);
+  device_name_path = malloc(strlen(crypt_get_dir()) + 1 + strlen(device_name) + 1);
+  if (device_name_path == NULL) {
+    printf("Can't create device path\n");
+    goto cleanup;
+  }
   sprintf(device_name_path, "%s/%s", crypt_get_dir(), device_name);
 
   if ((ret = mounter_mount(device_name_path, target)))
@@ -159,17 +170,20 @@ PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, cons
 }
 
 static void pam_close_mount(PENTRY config) {
+  char* device_name = NULL;
+  char* device_name_path = NULL;
+
   const char* source = map_get(&config, "source", NULL);
   const char* target = map_get(&config, "target", NULL);
   
-  char* device_name = encode_device_name(source);
+  device_name = encode_device_name(source);
   if (device_name == NULL) {
     printf("Can't encode source device\n");
     goto cleanup;
   }
 
-  char* device_name_path = malloc(strlen(crypt_get_dir()) + 1 + strlen(device_name) + 1);
-  if (device_name == NULL) {
+  device_name_path = malloc(strlen(crypt_get_dir()) + 1 + strlen(device_name) + 1);
+  if (device_name_path == NULL) {
     printf("Can't create device path\n");
     goto cleanup;
   }
