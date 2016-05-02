@@ -124,7 +124,8 @@ static void pam_open_mount(PENTRY config, const char* authtok) {
         goto cleanup;
     }
 
-    if ((ret = crypt_unlock(source, authtok, device_name)) < 0) {
+    int flags = strcmp(map_get(&config, "discard", ""), "true") ? CRYPT_ACTIVATE_ALLOW_DISCARDS : 0;
+    if ((ret = crypt_unlock(source, authtok, device_name, flags)) < 0) {
         fprintf(stderr, "pam_mounter: Device %s activation failed: %d\n", device_name, ret);
         goto cleanup;
     }

@@ -22,14 +22,14 @@
 #include <stdio.h>
 #include <string.h>
 
-int crypt_unlock(const char* path, const char* authtok, const char* name) {
+int crypt_unlock(const char* path, const char* authtok, const char* name, int flags) {
   int ret = -1;
   struct crypt_device *cd = NULL;
   if ((ret = crypt_init(&cd, path)) < 0)
     fprintf(stderr, "pam_mounter: crypt_init() failed for '%s': %d\n", path, ret);
   else {
     if ((ret = crypt_load(cd, CRYPT_LUKS1, NULL)) >= 0)
-      ret = crypt_activate_by_passphrase(cd, name, CRYPT_ANY_SLOT, authtok, strlen(authtok), 0);
+      ret = crypt_activate_by_passphrase(cd, name, CRYPT_ANY_SLOT, authtok, strlen(authtok), flags);
 
     crypt_free(cd);
   }
