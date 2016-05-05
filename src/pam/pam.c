@@ -30,11 +30,15 @@
 #include <libcryptsetup.h>
 
 #include <sys/mman.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <stdio.h>
 #include <malloc.h>
 #include <string.h>
 #include <ctype.h>
 #include <errno.h>
+#include <unistd.h>
+#include <pwd.h>
 
 #define CONFIGFILE "/etc/security/pam_mounter.conf"
 #define PMCOUNT_CMD "pmcount"
@@ -109,7 +113,7 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
   return PAM_SUCCESS;
 }
 
-static void pam_open_mount(PENTRY config, const char* authtok) {
+static void pam_open_mount(PENTRY config, const char* user, const char* authtok) {
   char* device_name_path = NULL;
   char* device_name = NULL;
 
@@ -137,6 +141,40 @@ static void pam_open_mount(PENTRY config, const char* authtok) {
     }
     sprintf(device_name_path, "%s/%s", crypt_get_dir(), device_name);
     source = device_name_path;
+  }
+
+  struct passwd *pent;
+  if ((pent = getpwnam(user)) == NULL) {
+    fprintf(stderr, "pam_mounter: Can't get info for user '%s'\n", user);
+    goto cleanup;
+  }
+
+  char* last = (char*) target;
+  while ((last = strchr(last + 1, '/')) != NULL) {
+    *last = '\0';
+    struct stat info;
+    if (stat(target, &info) != 0) {
+      *last = '/';
+      continue;
+    }
+
+    if (setegid(pent->pw_gid) < 0 || seteuid(pent->pw_uid) < 0) {
+      fprintf(stderr, "pam_mounter: Failed to set gid and uid\n", user);
+    } else if (mkdir(target, S_IRWXU | S_IXUSR | S_IXGRP | S_IXOTH) != 0) {
+      //Retry as root
+      if (seteuid(0) < 0) {
+        fprintf(stderr, "pam_mounter: Failed to create target directory as root\n");
+        goto cleanup;
+      }
+
+      if (mkdir(target, S_IRWXU | S_IXUSR | S_IXGRP | S_IXOTH) < 0) {
+        fprintf(stderr, "pam_mounter: Failed to create target directory '%s'\n", target);
+        goto cleanup;
+      }
+
+      chown(target, pent->pw_uid, pent->pw_gid);
+    }
+    *last = '/';
   }
 
   if ((ret = mounter_mount(source, target, map_get(&config, "fstype", "auto"), map_get(&config, "options", "defaults"))))
@@ -171,7 +209,7 @@ PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, cons
   while (config != NULL) {
     PENTRY section = (PENTRY) config->value;
     if (strcmp(config->key, "mount") == 0 && strcmp(map_get(&section, "user", user), user) == 0)
-      pam_open_mount(section, authtok);
+      pam_open_mount(section, user, authtok);
 
     config = config->next;
   }
