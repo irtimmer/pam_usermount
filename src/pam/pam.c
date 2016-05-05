@@ -1,20 +1,20 @@
 /*
- * This file is part of Pam_mounter.
+ * This file is part of Pam_usermount.
  *
  * Copyright (C) 2016 Iwan Timmer
  *
- * Pam_mounter is free software; you can redistribute it and/or modify
+ * Pam_usermount is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 3 of the License, or
  * (at your option) any later version.
  *
- * Pam_mounter is distributed in the hope that it will be useful,
+ * Pam_usermount is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Pam_mounter; if not, see <http://www.gnu.org/licenses/>.
+ * along with Pam_usermount; if not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "config.h"
@@ -40,7 +40,7 @@
 #include <unistd.h>
 #include <pwd.h>
 
-#define CONFIGFILE "/etc/security/pam_mounter.conf"
+#define CONFIGFILE "/etc/security/pam_usermount.conf"
 #define PMCOUNT_CMD "pmcount"
 
 static char* encode_device_name(const char* device) {
@@ -100,13 +100,13 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
   else {
     pam_prompt(pamh, PAM_PROMPT_ECHO_OFF, &authtok, "Password: ");
     if ((ret = pam_set_item(pamh, PAM_AUTHTOK, authtok)) != PAM_SUCCESS)
-      fprintf(stderr, "pam_mounter: Failed to set password");
+      fprintf(stderr, "pam_usermount: Failed to set password");
   }
 
   if (authtok != NULL) {
-    if ((ret = pam_set_data(pamh, "pam_mounter_authtok", authtok, clean_authtok)) == PAM_SUCCESS) {
+    if ((ret = pam_set_data(pamh, "pam_usermount_authtok", authtok, clean_authtok)) == PAM_SUCCESS) {
       if (mlock(authtok, strlen(authtok) + 1) < 0)
-        fprintf(stderr, "pam_mounter: Failed to memory lock authtok: %s\n", strerror(errno));
+        fprintf(stderr, "pam_usermount: Failed to memory lock authtok: %s\n", strerror(errno));
     }
   }
 
@@ -124,19 +124,19 @@ static void pam_open_mount(PENTRY config, const char* user, const char* authtok)
   if (strcmp(map_get(&config, "helper", ""), "crypt") == 0) {
     device_name = encode_device_name(source);
     if (device_name == NULL) {
-        fprintf(stderr, "pam_mounter: Not enough memory\n");
+        fprintf(stderr, "pam_usermount: Not enough memory\n");
         goto cleanup;
     }
 
     int flags = strcmp(map_get(&config, "discard", ""), "true") ? CRYPT_ACTIVATE_ALLOW_DISCARDS : 0;
     if ((ret = crypt_unlock(source, authtok, device_name, flags)) < 0) {
-        fprintf(stderr, "pam_mounter: Device %s activation failed: %d\n", device_name, ret);
+        fprintf(stderr, "pam_usermount: Device %s activation failed: %d\n", device_name, ret);
         goto cleanup;
     }
 
     device_name_path = malloc(strlen(crypt_get_dir()) + 1 + strlen(device_name) + 1);
     if (device_name_path == NULL) {
-        fprintf(stderr, "pam_mounter: Not enough memory\n");
+        fprintf(stderr, "pam_usermount: Not enough memory\n");
         goto cleanup;
     }
     sprintf(device_name_path, "%s/%s", crypt_get_dir(), device_name);
@@ -145,7 +145,7 @@ static void pam_open_mount(PENTRY config, const char* user, const char* authtok)
 
   struct passwd *pent;
   if ((pent = getpwnam(user)) == NULL) {
-    fprintf(stderr, "pam_mounter: Can't get info for user '%s'\n", user);
+    fprintf(stderr, "pam_usermount: Can't get info for user '%s'\n", user);
     goto cleanup;
   }
 
@@ -159,16 +159,16 @@ static void pam_open_mount(PENTRY config, const char* user, const char* authtok)
     }
 
     if (setegid(pent->pw_gid) < 0 || seteuid(pent->pw_uid) < 0) {
-      fprintf(stderr, "pam_mounter: Failed to set gid and uid\n", user);
+      fprintf(stderr, "pam_usermount: Failed to set gid and uid\n", user);
     } else if (mkdir(target, S_IRWXU | S_IXUSR | S_IXGRP | S_IXOTH) != 0) {
       //Retry as root
       if (seteuid(0) < 0) {
-        fprintf(stderr, "pam_mounter: Failed to create target directory as root\n");
+        fprintf(stderr, "pam_usermount: Failed to create target directory as root\n");
         goto cleanup;
       }
 
       if (mkdir(target, S_IRWXU | S_IXUSR | S_IXGRP | S_IXOTH) < 0) {
-        fprintf(stderr, "pam_mounter: Failed to create target directory '%s'\n", target);
+        fprintf(stderr, "pam_usermount: Failed to create target directory '%s'\n", target);
         goto cleanup;
       }
 
@@ -178,7 +178,7 @@ static void pam_open_mount(PENTRY config, const char* user, const char* authtok)
   }
 
   if ((ret = mounter_mount(source, target, map_get(&config, "fstype", "auto"), map_get(&config, "options", "defaults"))))
-    fprintf(stderr, "pam_mounter: Mount failed for '%s' on '%s': %s\n", source, target, strerror(errno));
+    fprintf(stderr, "pam_usermount: Mount failed for '%s' on '%s': %s\n", source, target, strerror(errno));
 
   cleanup:
   if (device_name != NULL)
@@ -191,14 +191,14 @@ static void pam_open_mount(PENTRY config, const char* user, const char* authtok)
 PAM_EXTERN int pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv) {
   const char* user;
   if (pam_get_user(pamh, &user, NULL) != PAM_SUCCESS) {
-    fprintf(stderr, "pam_mounter: Can't get username\n");
+    fprintf(stderr, "pam_usermount: Can't get username\n");
     return PAM_SUCCESS;
   }
 
   int ret;
   const char *authtok = NULL;
-  if ((ret = pam_get_data(pamh, "pam_mounter_authtok", (const void**) &authtok)) != PAM_SUCCESS) {
-    fprintf(stderr, "pam_mounter: Can't get auth token\n");
+  if ((ret = pam_get_data(pamh, "pam_usermount_authtok", (const void**) &authtok)) != PAM_SUCCESS) {
+    fprintf(stderr, "pam_usermount: Can't get auth token\n");
     return PAM_SUCCESS;
   }
 
@@ -227,13 +227,13 @@ static void pam_close_mount(PENTRY config) {
   if (strcmp(map_get(&config, "helper", ""), "crypt") == 0) {
     device_name = encode_device_name(source);
     if (device_name == NULL) {
-        fprintf(stderr, "pam_mounter: Not enough memory\n");
+        fprintf(stderr, "pam_usermount: Not enough memory\n");
         goto cleanup;
     }
 
     device_name_path = malloc(strlen(crypt_get_dir()) + 1 + strlen(device_name) + 1);
     if (device_name_path == NULL) {
-        fprintf(stderr, "pam_mounter: Not enough memory\n");
+        fprintf(stderr, "pam_usermount: Not enough memory\n");
         goto cleanup;
     }
     sprintf(device_name_path, "%s/%s", crypt_get_dir(), device_name);
@@ -242,12 +242,12 @@ static void pam_close_mount(PENTRY config) {
 
   int ret;
   if ((ret = mounter_umount(source, target))) {
-    fprintf(stderr, "pam_mounter: Mount failed for '%s' on '%s': %s\n", source, target, strerror(errno));
+    fprintf(stderr, "pam_usermount: Mount failed for '%s' on '%s': %s\n", source, target, strerror(errno));
     goto cleanup;
   }
 
   if (device_name != NULL && (ret = crypt_lock(device_name) < 0))
-    fprintf(stderr, "pam_mounter: Device %s deactivation failed: %d\n", device_name, ret);
+    fprintf(stderr, "pam_usermount: Device %s deactivation failed: %d\n", device_name, ret);
 
   cleanup:
   if (device_name_path != NULL)
@@ -260,7 +260,7 @@ static void pam_close_mount(PENTRY config) {
 PAM_EXTERN int pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, const char **argv) {
   const char* user;
   if (pam_get_user(pamh, &user, NULL) != PAM_SUCCESS) {
-    fprintf(stderr, "pam_mounter: Can't get username\n");
+    fprintf(stderr, "pam_usermount: Can't get username\n");
     return PAM_SUCCESS;
   }
 
