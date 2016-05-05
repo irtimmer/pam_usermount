@@ -13,10 +13,10 @@ Pam_usermount is a PAM module for automounting (encrypted) volumes on login.
 
 Insert the following lines in the /etc/pam.d configuration files to load pam_usermount on login
 
-'''
+```
 auth      optional  pam_usermount.so
 session   optional  pam_usermount.so
-'''
+```
 
 Edit the /etc/security/pam_usermount.conf file to add and remove volumes to be mounted on login
 
