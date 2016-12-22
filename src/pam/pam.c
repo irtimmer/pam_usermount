@@ -149,14 +149,15 @@ static void pam_open_mount(PENTRY config, const char* user, const char* authtok)
     goto cleanup;
   }
 
-  char* last = (char*) target;
-  while ((last = strchr(last + 1, '/')) != NULL) {
-    *last = '\0';
+  char* last = target;
+  do {
+    last = strchr(last + 1, '/');
+    if (last != NULL)
+      *last = '\0';
+
     struct stat info;
-    if (stat(target, &info) != 0) {
-      *last = '/';
-      continue;
-    }
+    if (stat(target, &info) == 0)
+      goto created;
 
     if (setegid(pent->pw_gid) < 0 || seteuid(pent->pw_uid) < 0) {
       fprintf(stderr, "pam_usermount: Failed to set gid and uid\n", user);
@@ -174,8 +175,11 @@ static void pam_open_mount(PENTRY config, const char* user, const char* authtok)
 
       chown(target, pent->pw_uid, pent->pw_gid);
     }
-    *last = '/';
-  }
+    
+    created:
+    if (last != NULL)
+      *last = '/';
+  } while (last != NULL);
 
   if ((ret = mounter_mount(source, target, map_get(&config, "fstype", "auto"), map_get(&config, "options", "defaults"))))
     fprintf(stderr, "pam_usermount: Mount failed for '%s' on '%s': %s\n", source, target, strerror(errno));
