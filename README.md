@@ -27,4 +27,4 @@ Edit the /etc/security/pam_usermount.conf file to add and remove volumes to be m
 3. Send Pull Requests
 
 ## Copyright and license
-Copyright 2016 Iwan Timmer. Distributed under the GNU GPL v3. For full terms see the LICENSE file
+Copyright 2016, 2017 Iwan Timmer. Distributed under the GNU GPL v2 and partly under the GNU LGPL v2.1. For full terms see the LICENSE and LICENSE.LGPL2 file
