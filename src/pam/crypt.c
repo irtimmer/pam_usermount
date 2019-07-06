@@ -1,7 +1,7 @@
 /*
  * This file is part of Pam_usermount.
  *
- * Copyright (C) 2016, 2017 Iwan Timmer
+ * Copyright (C) 2016-2019 Iwan Timmer
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -31,7 +31,7 @@ int crypt_unlock(const char* path, const char* authtok, const char* name, int fl
   else {
     if (crypt_status(cd, name) == CRYPT_ACTIVE)
       fprintf(stderr, "pam_usermount: Device %s is already active\n", name);
-    else if ((ret = crypt_load(cd, CRYPT_LUKS1, NULL)) >= 0)
+    else if ((ret = crypt_load(cd, CRYPT_LUKS, NULL)) >= 0)
       ret = crypt_activate_by_passphrase(cd, name, CRYPT_ANY_SLOT, authtok, strlen(authtok), flags);
 
     crypt_free(cd);
